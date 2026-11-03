@@ -1,0 +1,6 @@
+{
+  "name": "Simulador del Modelo B: Sistema Abierto",
+  "description": "Simulador interactivo de red de investidura y prueba de consistencia de Emma con análisis de λ, flujo estacionario y dinámica temporal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

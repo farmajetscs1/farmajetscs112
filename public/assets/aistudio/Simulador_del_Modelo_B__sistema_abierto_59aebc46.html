@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador del Modelo B: sistema abierto</title>
+<style>
+:root{--bg:#f6f7f9;--card:#ffffff;--fg:#1c2230;--mut:#5d6677;--line:#d9dde5;--c1:#3f55d1;--c2:#c27a12;--ok:#1f7a4d;--bad:#b3362b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#13161c;--card:#1b1f27;--fg:#e8ebf2;--mut:#98a1b3;--line:#2e3441;--c1:#8ea0ff;--c2:#f0b24a;--ok:#5fcf93;--bad:#ff8a7d}}
+:root[data-theme="dark"]{--bg:#13161c;--card:#1b1f27;--fg:#e8ebf2;--mut:#98a1b3;--line:#2e3441;--c1:#8ea0ff;--c2:#f0b24a;--ok:#5fcf93;--bad:#ff8a7d}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 Arial,Helvetica,sans-serif}
+main{max-width:1060px;margin:0 auto;padding:20px 16px 40px}
+h1{font:700 26px/1.2 Georgia,"Times New Roman",serif;margin:0 0 4px}
+h2{font:700 16px/1.3 Georgia,"Times New Roman",serif;margin:0 0 10px}
+.sub{color:var(--mut);margin:0 0 18px;max-width:70ch}
+.grid{display:grid;grid-template-columns:320px 1fr;gap:16px}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:16px}
+.f{display:grid;grid-template-columns:1fr 92px;gap:6px 10px;align-items:center}
+.f label{color:var(--mut);font-size:13px}
+input,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:5px 7px;width:100%}
+textarea{font:12px/1.4 monospace;min-height:130px}
+button{font:inherit;font-weight:700;color:#fff;background:var(--c1);border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+button.alt{background:transparent;color:var(--c1);border:1px solid var(--c1)}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--c2);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.m{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.m div{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.m b{display:block;font-size:20px}
+.m span{font-size:12px;color:var(--mut)}
+canvas{width:100%;height:230px;display:block}
+.lg span{margin-right:14px;font-size:13px;color:var(--mut)}
+.lg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
+.v{font-weight:700}.ok{color:var(--ok)}.bad{color:var(--bad)}
+.note{color:var(--mut);font-size:13px}
+#err{color:var(--bad);font-weight:700;min-height:1.2em}
+</style>
+</head>
+<body>
+<main>
+<h1>Modelo B: simulador de sistema abierto</h1>
+<p class="sub">Red de investidura con entrada s y fuga γ. La matriz D se aprende de una secuencia de activaciones y W = (D + Dᵀ)/2. Cambiá los parámetros o pegá un JSON y corré.</p>
+<div class="grid">
+<div>
+<div class="card"><h2>Parámetros</h2><div class="f" id="form"></div>
+<div class="row"><button id="run">Correr</button><button class="alt" id="reset">Valores por defecto</button></div><div id="err"></div></div>
+<div class="card"><h2>Cargar o copiar parámetros</h2><textarea id="json" spellcheck="false"></textarea>
+<div class="row"><button class="alt" id="load">Cargar JSON</button><button class="alt" id="dump">Mostrar actuales</button></div></div>
+</div>
+<div>
+<div class="card"><h2>Estado estacionario con κ elegido</h2><div class="m" id="met"></div></div>
+<div class="card"><h2>λ según κ</h2><div class="lg"><span><i style="background:var(--c1)"></i>Cerrado (s = 0, γ = 0)</span><span><i style="background:var(--c2)"></i>Abierto</span></div><canvas id="c1"></canvas>
+<p class="note">Con κ = 0 el sistema cerrado da λ = 1 (Lema 6). El sistema abierto puede dar λ &lt; 1 con W simétrica si la entrada y la descarga están en nodos distintos.</p></div>
+<div class="card"><h2>Prueba de Emma: descarga acumulada</h2><div class="m" id="emm"></div>
+<div class="lg" style="margin-top:10px"><span><i style="background:var(--c2)"></i>Descarga acumulada</span><span><i style="background:var(--c1)"></i>Masa inscripta (mA + mB)</span></div><canvas id="c2"></canvas>
+<p class="note">Antes del evento no hay entrada. En t ≥ tev se activa s_ev en el nodo del evento. Si la descarga acumulada supera lo inscripto, el modelo necesita fuente. Es una prueba de consistencia interna, no un test empírico.</p></div>
+</div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const DEF={n:12,rho:1,L:300,eps:0.001,seed:1,kappa:0.5,ent:1,s:1,fuga:"12",gamma:0.5,T:60,tev:30,mA:3,mB:2,nEv:3,sEv:1};
+const FIELDS=[["n","Nodos (3 a 40)"],["rho","Orden de la secuencia ρ (0 a 1)"],["L","Longitud de la secuencia"],["eps","Suavizado ε"],["seed","Semilla"],["kappa","κ (ligadura del Yo, 0 a 1)"],["ent","Nodo de entrada s"],["s","Intensidad de entrada s"],["fuga","Nodos de fuga (coma)"],["gamma","Fuga γ en esos nodos (0 a 0,99)"],["T","Pasos de la prueba de Emma"],["tev","Paso del evento tev"],["mA","Masa inscripta mA (nodo 1)"],["mB","Masa inscripta mB (nodo 2)"],["nEv","Nodo del evento"],["sEv","Entrada del evento s_ev"]];
+let P0={...DEF};
+const form=$("form");
+FIELDS.forEach(([k,l])=>{const lb=document.createElement("label");lb.textContent=l;lb.htmlFor="p_"+k;const i=document.createElement("input");i.id="p_"+k;i.value=DEF[k];if(k!=="fuga"){i.type="number";i.step="any"}form.append(lb,i)});
+function read(){const p={};FIELDS.forEach(([k])=>{const v=$("p_"+k).value;p[k]=k==="fuga"?v:parseFloat(v.replace(",","."))});return p}
+function write(p){FIELDS.forEach(([k])=>{if(p[k]!==undefined)$("p_"+k).value=p[k]})}
+function rng(seed){let a=(seed>>>0)||1;return()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
+function build(p){const n=p.n,r=rng(p.seed);const D=Array.from({length:n},()=>new Array(n).fill(p.eps));let cur=Math.floor(r()*n);
+for(let k=0;k<p.L;k++){const nx=r()<p.rho?(cur+1)%n:Math.floor(r()*n);D[cur][nx]+=1;cur=nx}
+const W=D.map((row,i)=>row.map((v,j)=>(v+D[j][i])/2));return{D,W}}
+const norm=M=>M.map(r=>{const s=r.reduce((a,b)=>a+b,0);return r.map(v=>v/s)});
+function Pk(D,W,k){const Pl=norm(W),Pg=norm(D);return Pl.map((r,i)=>r.map((v,j)=>(1-k)*v+k*Pg[i][j]))}
+function solve(A,b){const n=b.length;const M=A.map((r,i)=>[...r,b[i]]);
+for(let c=0;c<n;c++){let m=c;for(let r=c+1;r<n;r++)if(Math.abs(M[r][c])>Math.abs(M[m][c]))m=r;[M[c],M[m]]=[M[m],M[c]];
+const d=M[c][c];if(Math.abs(d)<1e-14)throw new Error("Sistema singular");
+for(let r=0;r<n;r++){if(r===c)continue;const f=M[r][c]/d;if(f)for(let j=c;j<=n;j++)M[r][j]-=f*M[c][j]}}
+return M.map((r,i)=>r[n]/r[i])}
+function lamJ(J){let t=0,m=0;const n=J.length;for(let i=0;i<n;i++)for(let j=0;j<n;j++){t+=J[i][j];m+=Math.min(J[i][j],J[j][i])}return m/t}
+function lamClosed(P){const n=P.length;const A=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>P[j][i]-(i===j?1:0)));
+A[n-1]=new Array(n).fill(1);const b=new Array(n).fill(0);b[n-1]=1;const pi=solve(A,b);return lamJ(P.map((r,i)=>r.map(v=>pi[i]*v)))}
+function openState(P,s,g){const n=P.length;const A=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>(i===j?1:0)-(1-g[j])*P[j][i]));
+const mu=solve(A,s);const J=P.map((r,i)=>r.map(v=>mu[i]*(1-g[i])*v));return{mu,J}}
+function params(p){const n=p.n;
+if(!(n>=3&&n<=40&&Number.isInteger(n)))throw new Error("Nodos debe ser un entero entre 3 y 40.");
+if(!(p.rho>=0&&p.rho<=1))throw new Error("ρ debe estar entre 0 y 1.");
+if(!(p.kappa>=0&&p.kappa<=1))throw new Error("κ debe estar entre 0 y 1.");
+if(!(p.gamma>=0&&p.gamma<1))throw new Error("γ debe estar entre 0 y 0,99.");
+if(!(p.eps>0))throw new Error("ε debe ser mayor que 0.");
+const nd=v=>{if(!(Number.isInteger(v)&&v>=1&&v<=n))throw new Error("Los nodos van de 1 a "+n+".");return v-1};
+const g=new Array(n).fill(0);String(p.fuga).split(",").map(x=>x.trim()).filter(Boolean).forEach(x=>{g[nd(parseInt(x,10))]=p.gamma});
+if(!g.some(v=>v>0))throw new Error("Indicá al menos un nodo de fuga.");
+const s=new Array(n).fill(0);s[nd(p.ent)]=p.s;const e=new Array(n).fill(0);e[nd(p.nEv)]=p.sEv;
+return{g,s,e,a:nd(1),b:nd(2)}}
+function chart(cv,xs,series,hl,ymax){const dpr=window.devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;const c=cv.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);
+const st=getComputedStyle(document.documentElement);const col=v=>st.getPropertyValue(v).trim();
+const L=40,R=10,T=10,B=22,x0=xs[0],x1=xs[xs.length-1],y0=0;
+const X=v=>L+(v-x0)/((x1-x0)||1)*(w-L-R),Y=v=>h-B-(v-y0)/((ymax-y0)||1)*(h-B-T);
+c.font="11px Arial";c.lineWidth=1;
+for(let k=0;k<=4;k++){const v=y0+(ymax-y0)*k/4;c.strokeStyle=col("--line");c.beginPath();c.moveTo(L,Y(v));c.lineTo(w-R,Y(v));c.stroke();c.fillStyle=col("--mut");c.fillText(v.toFixed(2),2,Y(v)+4)}
+c.fillStyle=col("--mut");c.fillText(String(x0),L,h-6);c.fillText(String(x1),w-R-18,h-6);
+series.forEach(s=>{c.strokeStyle=col(s.color);c.lineWidth=2;c.beginPath();s.y.forEach((v,i)=>{i?c.lineTo(X(xs[i]),Y(v)):c.moveTo(X(xs[i]),Y(v))});c.stroke()});
+if(hl){c.strokeStyle=col(hl.color);c.setLineDash([5,4]);c.beginPath();c.moveTo(X(hl.x),T);c.lineTo(X(hl.x),h-B);c.stroke();c.setLineDash([])}}
+const f3=v=>v.toFixed(3).replace(".",",");
+function card(l,v,cls){return'<div><span>'+l+'</span><b class="'+(cls||"")+'">'+v+"</b></div>"}
+function run(){$("err").textContent="";
+try{const p=read();const q=params(p);const {D,W}=build(p);
+const ks=[];for(let i=0;i<=20;i++)ks.push(i/20);
+const cl=[],op=[];ks.forEach(k=>{const Pm=Pk(D,W,k);cl.push(lamClosed(Pm));op.push(lamJ(openState(Pm,q.s,q.g).J))});
+chart($("c1"),ks,[{y:cl,color:"--c1"},{y:op,color:"--c2"}],{x:p.kappa,color:"--mut"},1);
+const Pm=Pk(D,W,p.kappa),os=openState(Pm,q.s,q.g);
+const entrada=q.s.reduce((a,b)=>a+b,0),desc=os.mu.reduce((a,m,i)=>a+q.g[i]*m,0),mtot=os.mu.reduce((a,b)=>a+b,0);
+const lc=lamClosed(Pm),lo=lamJ(os.J);
+$("met").innerHTML=card("λ cerrado",f3(lc))+card("λ abierto",f3(lo))+card("Diferencia",f3(lc-lo))+card("Masa total estacionaria",f3(mtot))+card("Entrada = descarga",f3(entrada)+" / "+f3(desc),Math.abs(entrada-desc)<1e-6?"ok":"bad");
+let mu=new Array(p.n).fill(0);mu[q.a]=p.mA;mu[q.b]+=p.mB;const insc=p.mA+p.mB;const cum=[0],ts=[0];let c=0;
+for(let t=0;t<p.T;t++){let d=0;mu.forEach((m,i)=>d+=q.g[i]*m);c+=d;cum.push(c);ts.push(t+1);
+const nx=new Array(p.n).fill(0);mu.forEach((m,i)=>{const o=m*(1-q.g[i]);for(let j=0;j<p.n;j++)nx[j]+=o*Pm[i][j]});
+if(t+1>=p.tev)q.e.forEach((v,j)=>nx[j]+=v);mu=nx}
+const ex=c-insc;
+$("emm").innerHTML=card("Masa inscripta",f3(insc))+card("Descarga acumulada",f3(c))+card("Exceso",f3(ex))+card("¿Requiere fuente?",ex>1e-9?"Sí":"No",ex>1e-9?"bad":"ok");
+chart($("c2"),ts,[{y:cum,color:"--c2"},{y:cum.map(()=>insc),color:"--c1"}],{x:Math.min(p.tev,p.T),color:"--mut"},Math.max(c,insc)*1.1||1);
+}catch(e){$("err").textContent=e.message}}
+$("run").onclick=run;
+$("reset").onclick=()=>{write(DEF);$("json").value=JSON.stringify(DEF,null,2);run()};
+$("dump").onclick=()=>{$("json").value=JSON.stringify(read(),null,2)};
+$("load").onclick=()=>{try{const o=JSON.parse($("json").value);write(o);run()}catch(e){$("err").textContent="JSON inválido: "+e.message}};
+FIELDS.forEach(([k])=>$("p_"+k).addEventListener("change",run));
+window.addEventListener("resize",run);
+$("json").value=JSON.stringify(DEF,null,2);run();
+</script>
+</body>
+</html>
